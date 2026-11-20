@@ -1,0 +1,45 @@
+// 设计变量 · 唯一色值来源（docs/frontend/07）
+// 语义状态色固定五色品牌板；主题切换走 data-theme，默认亮色。
+
+:root,
+:root[data-theme='light'] {
+  /* Neutral（亮色默认） */
+  --bg: #ffffff;
+  --bg-alt: #fafafa;
+  --text: #0f0f14;
+  --text-muted: #6e6e78;
+  --border: #e5e5ea;
+  --card-shadow: 0 8px 24px rgba(15, 15, 20, 0.08);
+  --overlay-card-bg: rgba(255, 255, 255, 0.85);
+
+  /* Brand hues（语义状态色，与主题无关） */
+  --brand-green: #0acf83;
+  --brand-orange: #f24e1e;
+  --brand-purple: #a259ff;
+  --brand-red: #ff7262;
+  --brand-blue: #1abcfe;
+
+  --accent-default: var(--brand-purple);
+
+  /* Element Plus 主色联动 */
+  --el-color-primary: var(--accent-default);
+  --el-border-radius-base: 8px;
+
+  /* 字号梯度 */
+  --fs-13: 13px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-32: 32px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #17171d;
+  --bg-alt: #1e1e26;
+  --text: #f2f2f5;
+  --text-muted: #9a9aa5;
+  --border: #2d2d38;
+  --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --overlay-card-bg: rgba(30, 30, 38, 0.85);
+}

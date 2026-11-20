@@ -1,0 +1,25 @@
+{
+  "name": "danmudeck-server",
+  "version": "2.0.0",
+  "description": "弹幕台 DanmuDeck — Bilibili live danmaku proxy server",
+  "type": "commonjs",
+  "main": "index.ts",
+  "scripts": {
+    "start": "bun run index.ts",
+    "test": "bun test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  }
+}

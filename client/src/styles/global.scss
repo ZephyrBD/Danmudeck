@@ -1,0 +1,41 @@
+// 全局重置与基础样式（docs/frontend/02 §7）
+@use './tokens' as *;
+
+html {
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+  font-size: var(--fs-15);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-alt);
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}

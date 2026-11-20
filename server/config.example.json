@@ -1,0 +1,15 @@
+{
+  "roomId": null,
+  "queue": { "enterKey": "排队", "leaveKey": "取消排队" },
+  "overlay": {
+    "showChat": 1,
+    "chatMax": 8,
+    "scMax": 3,
+    "showQueue": 1,
+    "queueMax": 6,
+    "queueMode": "list",
+    "queueFlowSpeed": 3,
+    "queueFlowPause": 2
+  },
+  "giftRules": []
+}

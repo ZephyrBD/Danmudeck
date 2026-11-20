@@ -1,0 +1,21 @@
+{
+  "name": "danmudeck",
+  "version": "2.0.0",
+  "description": "弹幕台 DanmuDeck — Bilibili live danmaku / SC / queue viewer (Vue + Bun)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:all": "bun install --cwd server && bun install --cwd client",
+    "dev": "concurrently -n server,client -c blue,green \"bun run --cwd server index.ts\" \"bun run --cwd client dev\"",
+    "start": "bun run --cwd server index.ts",
+    "build": "bun run --cwd client build",
+    "bundle": "bun run scripts/bundle.ts",
+    "test:client": "bun run --cwd client test",
+    "test:server": "bun run --cwd server test",
+    "typecheck:client": "bun run --cwd client typecheck",
+    "typecheck:server": "bun run --cwd server typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
