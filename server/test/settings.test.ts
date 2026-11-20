@@ -10,6 +10,7 @@ import {
   loadSettings,
   normalizeAuth,
   normalizeSettings,
+  resolveDataDir,
   saveAuth,
   saveSettings,
   clearAuth,
@@ -179,4 +180,45 @@ test('auth：save/load/clear 往返，uid 非正整数回退 0', () => {
   const { warn } = collectWarnings();
   const bad = normalizeAuth({ cookie: 5, uid: -1, uname: 3 }, warn);
   assert.deepStrictEqual(bad, defaultAuth());
+});
+
+test('resolveDataDir：源码运行落在 server/data，打包运行落在 exe 同级 data', () => {
+  const g = globalThis as Record<string, unknown>;
+  const savedEntry = g.__DANMUDECK_ENTRY__;
+  const savedEnv = process.env.DANMUDECK_DATA_DIR;
+  const savedExec = process.execPath;
+  try {
+    delete g.__DANMUDECK_ENTRY__;
+    delete process.env.DANMUDECK_DATA_DIR;
+    assert.strictEqual(resolveDataDir(), path.join(__dirname, '..', 'data'));
+
+    // 模拟单文件 exe：bundle-entry.ts 注入的标记 + 可执行文件路径
+    g.__DANMUDECK_ENTRY__ = true;
+    process.execPath = path.join('D:', 'Tools', 'DanmuDeck', 'danmudeck.exe');
+    assert.strictEqual(resolveDataDir(), path.join('D:', 'Tools', 'DanmuDeck', 'data'));
+
+    // 环境变量优先级最高，用于程序放在只读目录时重定向
+    process.env.DANMUDECK_DATA_DIR = path.join(os.tmpdir(), 'dd-custom');
+    assert.strictEqual(resolveDataDir(), path.join(os.tmpdir(), 'dd-custom'));
+  } finally {
+    process.execPath = savedExec;
+    if (savedEnv === undefined) delete process.env.DANMUDECK_DATA_DIR;
+    else process.env.DANMUDECK_DATA_DIR = savedEnv;
+    if (savedEntry === undefined) delete g.__DANMUDECK_ENTRY__;
+    else g.__DANMUDECK_ENTRY__ = savedEntry;
+  }
+});
+
+test('writeJsonFile 生成目录失败时抛出可读错误', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-bad-'));
+  const blocker = path.join(dir, 'file-not-dir');
+  fs.writeFileSync(blocker, 'x');
+  try {
+    assert.throws(
+      () => saveSettings(defaultSettings(), path.join(blocker, 'settings.json')),
+      /无法创建数据目录/
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

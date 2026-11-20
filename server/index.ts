@@ -12,6 +12,8 @@ import {
   saveSettings,
   saveAuth,
   clearAuth,
+  DATA_DIR,
+  AUTH_FILE,
   QUEUE_MODES,
   OVERLAY_LIMITS,
   type AuthData,
@@ -91,7 +93,7 @@ const login = new QrLogin({
     state.uid = uid;
     state.statusText = '已登录，连接中…';
     cookieCheckDone = false;
-    log(`[登录] 成功 uid=${uid}，Cookie 已保存到 data/auth.json`);
+    log(`[登录] 成功 uid=${uid}，Cookie 已保存到 ${AUTH_FILE}`);
     client.setCredentials(cookie, uid);
     connectClient();
     broadcast('status', snapshot());
@@ -687,8 +689,9 @@ const isEntry =
 if (isEntry) {
   server.listen(config.port, () => {
     log(`弹幕台 DanmuDeck 已启动: http://localhost:${config.port}  房间号: ${config.roomId || '空(自动)'}`);
+    log(`[配置] 数据目录: ${DATA_DIR}`);
     if (config.cookie) {
-      log(`[登录] 已使用 data/auth.json 中的 Cookie（uid=${config.uid || '未知'}），检查登录态…`);
+      log(`[登录] 已使用 ${AUTH_FILE} 中的 Cookie（uid=${config.uid || '未知'}），检查登录态…`);
       checkCookieLogin(config.cookie).then((r) => {
         if (r.state === 'valid') {
           log(`[登录] Cookie 检查: 有效 uname=${r.uname}`);

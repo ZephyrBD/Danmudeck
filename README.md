@@ -32,7 +32,18 @@ bun run typecheck:server
 
 ## 配置
 
-运行时配置保存在 `server/data/settings.json`，凭据保存在 `server/data/auth.json`，都通过管理页写入，**一般不需要手改**。完整字段示例见 [`server/config.example.json`](server/config.example.json)。
+运行时配置保存在 `settings.json`，凭据保存在 `auth.json`，都通过管理页写入，**一般不需要手改**。完整字段示例见 [`server/config.example.json`](server/config.example.json)。
+
+**数据存哪**（启动日志会打印真实路径）：
+
+- 源码运行（`bun run server/index.ts`）：`server/data/`
+- 打包的 `danmudeck.exe`：**exe 同级目录的 `data\`**，随程序一起拷走即可带走登录态与设置
+- 程序放在 `Program Files` 等只读位置时，用环境变量 `DANMUDECK_DATA_DIR` 指到可写目录：
+
+```bash
+set DANMUDECK_DATA_DIR=D:\DanmuDeckData
+danmudeck.exe
+```
 
 ```json
 {

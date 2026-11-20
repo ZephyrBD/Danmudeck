@@ -24,10 +24,16 @@ describe('OverlaySettingsWidget 流动开关', () => {
     const wrapper = mount(OverlaySettingsWidget, { props: { overlay } })
     const text = wrapper.text()
     expect(text).toContain('排列方式')
-    expect(text).toContain('流动（超出自动翻页）')
+    // 流动开关：标签文案以「自动翻页」为关键字（完整写法可能微调）
+    expect(text).toContain('自动翻页')
     // 旧的三值「排队形式」下拉已经不存在
     expect(text).not.toContain('排队形式')
-    const flowRow = wrapper.findAll('.toggle_row').find((r) => r.text().includes('流动'))
+    // 排列方式下拉里只有竖排 / 横排，不再有旧的「流动」选项
+    const selects = wrapper.findAllComponents({ name: 'EpSelect' })
+    expect(selects).toHaveLength(1)
+    const modeField = wrapper.findAll('.field').find((f) => f.text().includes('排列方式'))
+    expect(modeField?.find('.el_select').exists()).toBe(true)
+    const flowRow = wrapper.findAll('.toggle_row').find((r) => r.text().includes('自动翻页'))
     expect(flowRow).toBeTruthy()
   })
 

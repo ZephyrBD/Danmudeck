@@ -40,7 +40,20 @@ export interface AuthData {
   updatedAt: string;
 }
 
-export const DATA_DIR = path.join(__dirname, 'data');
+export function resolveDataDir(): string {
+  const fromEnv = process.env.DANMUDECK_DATA_DIR;
+  if (fromEnv && fromEnv.trim()) return path.resolve(fromEnv.trim());
+
+  const packaged = Boolean((globalThis as Record<string, unknown>).__DANMUDECK_ENTRY__);
+  if (packaged) {
+    const exeDir = path.dirname(process.execPath);
+    return path.join(exeDir, 'data');
+  }
+  return path.join(__dirname, 'data');
+}
+
+export const DATA_DIR = resolveDataDir();
+
 export const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 export const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
 
@@ -227,7 +240,11 @@ export function readJsonFile(filePath: string, warn: WarnFn = defaultWarn): unkn
 let writeSeq = 0;
 
 export function writeJsonFile(filePath: string, data: unknown): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  } catch (e) {
+    throw new Error(`无法创建数据目录 ${path.dirname(filePath)}（${(e as Error).message}）`);
+  }
   writeSeq += 1;
   const tmp = `${filePath}.${process.pid}.${writeSeq}.tmp`;
   try {
@@ -239,7 +256,7 @@ export function writeJsonFile(filePath: string, data: unknown): void {
     } catch {
       /* 临时文件可能已被 rename */
     }
-    throw e;
+    throw new Error(`无法写入 ${filePath}（${(e as Error).message}）。若程序放在 Program Files 等只读目录，请改用 DANMUDECK_DATA_DIR 指定可写目录`);
   }
 }
 
