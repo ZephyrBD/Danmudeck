@@ -17,6 +17,10 @@ scripts/static.gen.ts
 client/test-results/
 client/probe-out.txt
 
+# Local planning / editor settings
+plan.md
+.vscode/
+
 # Process artifacts (layout rework screenshots etc.)
 .workflow/
 
