@@ -45,6 +45,7 @@ bun run typecheck:server
     "showQueue": 1,
     "queueMax": 6,
     "queueMode": "list",
+    "queueFlow": 0,
     "queueFlowSpeed": 3,
     "queueFlowPause": 2
   },
@@ -53,7 +54,8 @@ bun run typecheck:server
 ```
 
 - `roomId` 为 `null` 时自动使用扫码账号的直播间。
-- `overlay.queueMode`：`list` 列表 / `horizontal` 横排 / `flow` 流动。
+- `overlay.queueMode`：排列方式，`list` 竖排 / `horizontal` 横排。
+- `overlay.queueFlow`：流动开关（`0` 关 / `1` 开），超出「排队显示人数」时自动翻页；横排竖排都能开。速度与底部停留单位分别是秒/屏、秒。
 - `giftRules` 由管理页「礼物规则」面板写入。
 - 服务端口默认 3000，可用环境变量 `PORT` 覆盖。
 - 旧的 `.env` 配置方式**已废弃**，程序不再读取；存在也无需删除。

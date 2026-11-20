@@ -1,6 +1,6 @@
 {
   "name": "danmudeck",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "弹幕台 DanmuDeck — Bilibili live danmaku / SC / queue viewer (Vue + Bun)",
   "private": true,
   "type": "module",

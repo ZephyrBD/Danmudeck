@@ -9,41 +9,55 @@
       <span>弹幕 + SC 覆盖</span>
       <ElSwitch v-model="form.showChat" />
     </div>
-    <label class="field">
-      <span>弹幕显示条数</span>
-      <ElInputNumber v-model="form.chatMax" :min="1" :max="50" />
-    </label>
-    <label class="field">
-      <span>SC 显示条数</span>
-      <ElInputNumber v-model="form.scMax" :min="1" :max="10" />
-    </label>
+    <!-- 弹幕相关控件：横向并排容器 -->
+    <div class="field-row">
+      <label class="field">
+        <span>弹幕显示条数</span>
+        <ElInputNumber v-model="form.chatMax" :min="1" :max="50" />
+      </label>
+      <label class="field">
+        <span>SC 显示条数</span>
+        <ElInputNumber v-model="form.scMax" :min="1" :max="10" />
+      </label>
+    </div>
 
     <div class="toggle_row">
       <span>排队覆盖</span>
       <ElSwitch v-model="form.showQueue" />
     </div>
-    <label class="field">
-      <span>排队显示人数</span>
-      <ElInputNumber v-model="form.queueMax" :min="1" :max="50" />
-    </label>
-    <label class="field">
-      <span>排队形式</span>
-      <ElSelect v-model="form.queueMode">
-        <el-option label="列表（竖排）" value="list" />
-        <el-option label="横向" value="horizontal" />
-        <el-option label="流动（超出自动翻页）" value="flow" />
-      </ElSelect>
-    </label>
-    <template v-if="form.queueMode === 'flow'">
+    <!-- 排队基础控件横向并排 -->
+    <div class="field-row">
       <label class="field">
+        <span>排队显示人数</span>
+        <ElInputNumber v-model="form.queueMax" :min="1" :max="50" />
+      </label>
+      <label class="field">
+        <span>排列方式</span>
+        <ElSelect v-model="form.queueMode" @change="onModeChange">
+          <el-option label="竖排" value="list" />
+          <el-option label="横排" value="horizontal" />
+        </ElSelect>
+      </label>
+    </div>
+
+    <div class="toggle_row">
+      <span>自动翻页</span>
+      <ElSwitch v-model="form.queueFlow" />
+    </div>
+    <!-- 流动参数横向并排 -->
+    <div class="field-row">
+      <label class="field" :class="{ inactive: !form.queueFlow }">
         <span>流动速度（秒 / 屏）</span>
-        <ElInputNumber v-model="form.queueFlowSpeed" :min="1" :max="15" />
+        <ElInputNumber v-model="form.queueFlowSpeed" :min="1" :max="15" :disabled="!form.queueFlow" />
       </label>
-      <label class="field">
+      <label class="field" :class="{ inactive: !form.queueFlow }">
         <span>底部停留（秒）</span>
-        <ElInputNumber v-model="form.queueFlowPause" :min="0" :max="15" />
+        <ElInputNumber v-model="form.queueFlowPause" :min="0" :max="15" :disabled="!form.queueFlow" />
       </label>
-    </template>
+    </div>
+    <div v-if="form.queueFlow" class="flow_hint">
+      {{ flowHint }}
+    </div>
 
     <ElButton type="primary" class="save_btn" :loading="saving" @click="save">
       {{ saving ? '保存中…' : '保存覆盖设置' }}
@@ -56,6 +70,7 @@
     </div>
   </div>
 </template>
+
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -81,6 +96,8 @@ interface OverlayForm {
   showQueue: boolean
   queueMax: number
   queueMode: QueueMode
+  /** 流动开关独立于排列方式 */
+  queueFlow: boolean
   queueFlowSpeed: number
   queueFlowPause: number
 }
@@ -92,12 +109,13 @@ const form = ref<OverlayForm>({
   showQueue: true,
   queueMax: 6,
   queueMode: 'list',
+  queueFlow: false,
   queueFlowSpeed: 3,
   queueFlowPause: 2,
 })
 
 function toMode(mode?: QueueMode): QueueMode {
-  return mode === 'horizontal' || mode === 'flow' ? mode : 'list'
+  return mode === 'horizontal' ? 'horizontal' : 'list'
 }
 
 watch(
@@ -110,6 +128,7 @@ watch(
       showQueue: !!o.showQueue,
       queueMax: o.queueMax ?? 6,
       queueMode: toMode(o.queueMode),
+      queueFlow: !!o.queueFlow,
       queueFlowSpeed: o.queueFlowSpeed ?? 3,
       queueFlowPause: o.queueFlowPause ?? 2,
     }
@@ -120,6 +139,17 @@ watch(
 const origin = computed(() => (typeof window === 'undefined' ? '' : window.location.origin))
 const chatUrl = computed(() => `${origin.value}/overlay/chat`)
 const queueUrl = computed(() => `${origin.value}/overlay/queue`)
+
+// 流动要点：显示条数决定一屏容量，超出部分才需要翻页
+const flowHint = computed(() => {
+  const perScreen = Math.max(1, Number(form.value.queueMax) || 1)
+  return `一屏显示 ${perScreen} 条，超出的部分会逐屏下翻。`
+})
+
+function onModeChange(): void {
+  // 改了设置还没保存时清掉上一条「已生效」提示，免得误解
+  savedMsg.value = ''
+}
 
 // 新窗口预览地址；OBS 里请用下方明文地址复制
 function open(path: string): void {
@@ -143,6 +173,7 @@ async function save(): Promise<void> {
       showQueue: form.value.showQueue ? 1 : 0,
       queueMax: Number(form.value.queueMax),
       queueMode: form.value.queueMode,
+      queueFlow: form.value.queueFlow ? 1 : 0,
       queueFlowSpeed: Number(form.value.queueFlowSpeed),
       queueFlowPause: Number(form.value.queueFlowPause),
     })
@@ -187,12 +218,36 @@ async function save(): Promise<void> {
   color: var(--text);
 }
 
+// 新增：一行放多个 field，自动换行
+.field-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: var(--fs-13);
   color: var(--text-muted);
+
+  &.inactive {
+    opacity: 0.55;
+  }
+  // 给控件固定宽度，统一好看
+  :deep(.el-input-number), :deep(.el-select) {
+    width: 140px;
+  }
+}
+
+.flow_hint {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(0, 0, 0, 0.03);
+  font-size: var(--fs-13);
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .save_btn {

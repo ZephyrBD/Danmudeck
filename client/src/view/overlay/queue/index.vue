@@ -1,24 +1,20 @@
 <template>
-  <div v-if="overlay.showQueue" class="overlay_queue" :class="overlay.queueMode">
-    <!-- 流动形态：外层限高为 queueMax 行，内层整列平移实现下翻 → 停留 → 回顶（plan §9） -->
-    <div v-if="overlay.queueMode === 'flow'" ref="viewportRef" class="flow_viewport">
+  <div v-if="overlay.showQueue" class="overlay_queue" :class="[mode, { flowing: isFlowing }]">
+    <!-- 流动开关打开时：外层限高为一屏，内层整列/整行平移实现翻页 → 停留 → 回顶 -->
+    <div v-if="isFlowing" ref="viewportRef" class="flow_viewport" :class="offsetAxis === 'x' ? 'flow_x' : 'flow_y'">
       <div class="flow_track" :style="trackStyle">
-        <div
-          v-for="item in active"
-          :key="item.uid"
-          class="q_card"
-        >
+        <div v-for="item in active" :key="item.uid" class="q_card">
           <span class="q_pos" :style="{ background: posColor(item.uid) }">{{ item.position }}</span>
           <span class="q_user" :style="item.color ? { color: item.color } : {}">{{ item.user }}</span>
         </div>
-        <div v-if="active.length === 0" key="placeholder" class="q_card flow_empty">
+        <div v-if="active.length === 0" class="q_card flow_empty">
           <span class="q_pos ghost">?</span>
           <span class="q_user">虚位以待</span>
         </div>
       </div>
     </div>
 
-    <TransitionGroup v-else :name="overlay.queueMode === 'horizontal' ? 'slide_h' : 'slide_v'" tag="div" class="q_wrap">
+    <TransitionGroup v-else :name="mode === 'horizontal' ? 'slide_h' : 'slide_v'" tag="div" class="q_wrap">
       <div v-for="item in visible" :key="item.uid" class="q_card">
         <span class="q_pos" :style="{ background: posColor(item.uid) }">{{ item.position }}</span>
         <span class="q_user" :style="item.color ? { color: item.color } : {}">{{ item.user }}</span>
@@ -35,7 +31,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ws from '@/api/ws'
 import { fetchOverlay, fetchStatus } from '@/api'
-import type { OverlayData, QueueItem, StatusData } from '@/types/models'
+import type { OverlayData, QueueItem, QueueMode, StatusData } from '@/types/models'
 
 defineOptions({ name: 'OverlayQueue' })
 
@@ -56,20 +52,24 @@ const overlay = ref<OverlayData>({
   showQueue: 1,
   queueMax: 6,
   queueMode: 'list',
+  queueFlow: 0,
   queueFlowSpeed: 3,
   queueFlowPause: 2,
 })
 
-/** 全部未完成条目（流动形态需要完整列表来测量溢出） */
+/** 全部未完成条目（流动需要完整列表来测量溢出） */
 const active = ref<QueueItem[]>([])
 
 const queueMax = computed(() => overlay.value.queueMax ?? 6)
-/** 列表/横向形态只显示前 queueMax 条 */
+/** 只决定排列方向；流动是叠加在这个方向上的开关 */
+const mode = computed<QueueMode>(() => (overlay.value.queueMode === 'horizontal' ? 'horizontal' : 'list'))
+const isFlowing = computed(() => !!overlay.value.queueFlow)
+/** 不流动时只显示前 queueMax 条 */
 const visible = computed(() => active.value.slice(0, queueMax.value))
 
 const unsubscribers: Array<() => void> = []
 
-/** 队列内容签名：只在内容真正变化时重置流动动画，避免每条弹幕都回顶（plan §9「新条目到达时重算并回顶」） */
+/** 队列内容签名：只在内容真正变化时重置动画，避免每条弹幕都回顶（plan §9「新条目到达时重算并回顶」） */
 function queueSignature(list: QueueItem[]): string {
   return list.map((i) => `${i.uid}:${i.position}`).join(',')
 }
@@ -88,17 +88,19 @@ function applyQueue(list: QueueItem[] | undefined): void {
   }
 }
 
-// ---- 流动形态 -------------------------------------------------------------
+// ---- 流动（横排竖排通用）---------------------------------------------------
 
 const viewportRef = ref<HTMLElement | null>(null)
 const offset = ref(0)
-/** 容器限高（像素），行高 × queueMax */
-const viewHeight = ref(0)
-/** 内容总高（像素） */
-const trackHeight = ref(0)
+/** 平移方向：竖排向下翻，横排向左翻 */
+const offsetAxis = ref<'y' | 'x'>('y')
+/** 一屏尺寸（像素）：竖排是高度，横排是宽度 */
+const viewExtent = ref(0)
+/** 内容总尺寸（像素） */
+const trackExtent = ref(0)
 
 const trackStyle = computed(() => ({
-  transform: `translateY(-${offset.value}px)`,
+  transform: offsetAxis.value === 'y' ? `translateY(-${offset.value}px)` : `translateX(-${offset.value}px)`,
   transition: 'transform 0s linear',
 }))
 
@@ -115,20 +117,23 @@ function measure(): void {
   if (!track) return
   const firstCard = track.firstElementChild as HTMLElement | null
   const gap = 10
-  const rowHeight = firstCard?.getBoundingClientRect().height ?? 0
-  if (rowHeight <= 0) {
+  const axis = mode.value === 'horizontal' ? 'x' : 'y'
+  const cardBox = firstCard?.getBoundingClientRect()
+  const cardSize = cardBox ? (axis === 'x' ? cardBox.width : cardBox.height) : 0
+  offsetAxis.value = axis
+  if (cardSize <= 0) {
     // 尚未布局（隐藏页/OBS 预热）：保持 auto，等 ResizeObserver 再量
-    viewport.style.setProperty('--flow-height', 'none')
-    trackHeight.value = 0
+    viewport.style.setProperty('--flow-size', 'none')
+    trackExtent.value = 0
     return
   }
-  // 容器限高 = 单行高度 × queueMax（plan D20），由 CSS 变量驱动
-  const limit = rowHeight * queueMax.value + gap * (queueMax.value - 1)
-  viewport.style.setProperty('--flow-height', `${limit}px`)
-  viewHeight.value = limit
-  // 内容总高：N 行 + (N-1) 个行间距；下翻距离 = 内容总高 - 容器高度
+  // 一屏尺寸 = 单卡尺寸 × queueMax + 间距（plan D20），由 CSS 变量驱动
+  const limit = cardSize * queueMax.value + gap * (queueMax.value - 1)
+  viewport.style.setProperty('--flow-size', `${limit}px`)
+  viewExtent.value = limit
+  // 内容总尺寸：N 个卡片 + (N-1) 个间距；翻页距离 = 内容总尺寸 - 一屏尺寸
   const count = track.children.length
-  trackHeight.value = count * rowHeight + Math.max(0, count - 1) * gap
+  trackExtent.value = count * cardSize + Math.max(0, count - 1) * gap
 }
 
 function stopFlow(): void {
@@ -136,16 +141,16 @@ function stopFlow(): void {
   raf = 0
 }
 
-/** 溢出才动：下翻 speed 秒 → 底部停 pause 秒 → 同速回顶 → 循环（plan D12/D17） */
+/** 溢出才动：翻到末尾 speed 秒 → 底部停 pause 秒 → 同速回顶 → 循环（plan D12/D17） */
 async function restartFlow(): Promise<void> {
   stopFlow()
   offset.value = 0
-  // 先等 DOM 切到 flow 形态，再量尺寸（切换形态时 viewport 这时才存在）
+  // 先等 DOM 切到流动布局，再量尺寸（刚打开开关时 viewport 这时才存在）
   await nextTick()
-  if (overlay.value.queueMode !== 'flow') return
+  if (!isFlowing.value) return
   measure()
-  const distance = trackHeight.value - viewHeight.value
-  // 未溢出（或还没量到行高）就静止；队列/尺寸变化会再次触发本函数
+  const distance = trackExtent.value - viewExtent.value
+  // 未溢出（或还没量到卡片尺寸）就静止；队列/尺寸变化会再次触发本函数
   if (distance <= 4) return
   if (reduceMotion) return
 
@@ -188,21 +193,25 @@ async function restartFlow(): Promise<void> {
   raf = requestAnimationFrame(step)
 }
 
-// 内容变化后重新量体积：列表/横向也要保证切换形态时 viewport 已被观察
-watch(
-  () => active.value.length,
-  () => {
-    if (typeof ResizeObserver !== 'undefined' && viewportRef.value) {
-      resizeObserver = resizeObserver ?? new ResizeObserver(() => void restartFlow())
-      resizeObserver.observe(viewportRef.value)
-    }
-  }
-)
+function observeViewport(): void {
+  if (typeof ResizeObserver === 'undefined') return
+  resizeObserver = resizeObserver ?? new ResizeObserver(() => void restartFlow())
+  const observer = resizeObserver
+  void nextTick(() => {
+    if (viewportRef.value) observer.observe(viewportRef.value)
+  })
+}
 
-// 设置变化（形态/速度/停留/条数）直接重启；内容变化由 applyQueue 判签名后重启
+// 内容变化后重新量体积
+watch(() => active.value.length, observeViewport)
+
+// 设置变化（方向/流动开关/速度/停留/条数）直接重启；内容变化由 applyQueue 判签名后重启
 watch(
-  () => [overlay.value.queueMode, overlay.value.queueFlowSpeed, overlay.value.queueFlowPause, queueMax.value],
-  () => void restartFlow()
+  () => [mode.value, isFlowing.value, overlay.value.queueFlowSpeed, overlay.value.queueFlowPause, queueMax.value],
+  () => {
+    observeViewport()
+    void restartFlow()
+  }
 )
 
 onMounted(async () => {
@@ -218,13 +227,7 @@ onMounted(async () => {
   unsubscribers.push(
     ws.on('overlay', (data: OverlayData) => {
       overlay.value = { ...overlay.value, ...data }
-      if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver = resizeObserver ?? new ResizeObserver(() => void restartFlow())
-        const observer = resizeObserver
-        void nextTick(() => {
-          if (viewportRef.value) observer.observe(viewportRef.value)
-        })
-      }
+      observeViewport()
       void restartFlow()
     })
   )
@@ -255,29 +258,8 @@ onBeforeUnmount(() => {
   left: 16px;
   display: flex;
   justify-content: flex-end;
+  align-items: flex-end;
   pointer-events: none;
-
-  &.list {
-    align-items: flex-end;
-
-    .q_wrap {
-      flex-direction: column;
-      align-items: flex-end;
-      flex-wrap: nowrap;
-    }
-  }
-
-  &.horizontal {
-    align-items: flex-end;
-
-    .q_wrap {
-      flex-direction: row;
-    }
-  }
-
-  &.flow {
-    align-items: flex-end;
-  }
 }
 
 .q_wrap {
@@ -286,21 +268,52 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+/* 竖排：一列向下，右对齐 */
+.overlay_queue.list .q_wrap {
+  flex-direction: column;
+  align-items: flex-end;
+  flex-wrap: nowrap;
+}
+
+/* 横排：一行向右 */
+.overlay_queue.horizontal .q_wrap {
+  flex-direction: row;
+}
+
+/* 流动容器：按方向锁一屏尺寸，溢出部分裁掉 */
 .flow_viewport {
-  max-height: var(--flow-height, none);
-  height: var(--flow-height, auto);
   overflow: hidden;
   display: flex;
-  justify-content: flex-end;
+
+  &.flow_y {
+    height: var(--flow-size, auto);
+    max-height: var(--flow-size, none);
+    justify-content: flex-end;
+  }
+
+  &.flow_x {
+    width: var(--flow-size, auto);
+    max-width: var(--flow-size, none);
+    align-items: flex-end;
+  }
 }
 
 .flow_track {
   display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+.overlay_queue.list .flow_track {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  width: max-content;
-  will-change: transform;
+}
+
+.overlay_queue.horizontal .flow_track {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .q_card {
@@ -314,6 +327,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(3px);
   white-space: nowrap;
+  flex-shrink: 0;
 
   &.empty,
   &.flow_empty {
@@ -328,9 +342,6 @@ onBeforeUnmount(() => {
     }
   }
 }
-
-/* 流动卡片整体按 uid 取色，内部文字用白字 */
-/* 流动卡片沿用与列表一致的取色与文字色，保持两种形态观感一致 */
 
 .q_pos {
   min-width: 24px;

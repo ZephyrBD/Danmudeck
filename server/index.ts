@@ -623,6 +623,7 @@ app.post('/api/overlay', (req: Request, res: Response) => {
   const showQueue = body.showQueue === undefined ? ov.showQueue : Number(body.showQueue) ? 1 : 0;
   const queueMax = Number(body.queueMax ?? ov.queueMax);
   const queueMode = String(body.queueMode || ov.queueMode) as QueueMode;
+  const queueFlow = body.queueFlow === undefined ? ov.queueFlow : Number(body.queueFlow) ? 1 : 0;
   const queueFlowSpeed = Number(body.queueFlowSpeed ?? ov.queueFlowSpeed);
   const queueFlowPause = Number(body.queueFlowPause ?? ov.queueFlowPause);
 
@@ -637,7 +638,7 @@ app.post('/api/overlay', (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: `排队人数需在 ${L.queueMax.min}-${L.queueMax.max} 之间` });
   }
   if (!QUEUE_MODES.includes(queueMode)) {
-    return res.status(400).json({ ok: false, error: '排队模式必须是 list、horizontal 或 flow' });
+    return res.status(400).json({ ok: false, error: '排队排列方式必须是 list（竖排）或 horizontal（横排）' });
   }
   if (!Number.isInteger(queueFlowSpeed) || queueFlowSpeed < L.queueFlowSpeed.min || queueFlowSpeed > L.queueFlowSpeed.max) {
     return res.status(400).json({ ok: false, error: `流动速度需为 ${L.queueFlowSpeed.min}-${L.queueFlowSpeed.max} 的整数（秒/屏）` });
@@ -647,12 +648,12 @@ app.post('/api/overlay', (req: Request, res: Response) => {
   }
 
   const next: OverlaySettings = {
-    showChat, chatMax, scMax, showQueue, queueMax, queueMode, queueFlowSpeed, queueFlowPause,
+    showChat, chatMax, scMax, showQueue, queueMax, queueMode, queueFlow, queueFlowSpeed, queueFlowPause,
   };
   Object.assign(ov, next);
   saveSettings(settings);
   config.overlay = ov;
-  log(`[覆盖] 弹幕SC=${ov.showChat ? '开' : '关'}(${ov.chatMax}/${ov.scMax}) 排队=${ov.showQueue ? '开' : '关'}(${ov.queueMax} ${ov.queueMode}${ov.queueMode === 'flow' ? ` ${ov.queueFlowSpeed}s/${ov.queueFlowPause}s` : ''})`);
+  log(`[覆盖] 弹幕SC=${ov.showChat ? '开' : '关'}(${ov.chatMax}/${ov.scMax}) 排队=${ov.showQueue ? '开' : '关'}(${ov.queueMax} ${ov.queueMode === 'horizontal' ? '横排' : '竖排'}${ov.queueFlow ? ` + 流动 ${ov.queueFlowSpeed}s/${ov.queueFlowPause}s` : ''})`);
   broadcast('overlay', { ...ov });
   res.json({ ok: true, overlay: { ...ov } });
 });

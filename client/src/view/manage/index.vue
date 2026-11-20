@@ -247,6 +247,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 24px;
   min-height: 0;
   padding: 24px 32px;
@@ -254,6 +255,8 @@ onBeforeUnmount(() => {
 }
 
 .col {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;

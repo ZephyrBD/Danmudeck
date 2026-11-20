@@ -5,7 +5,7 @@ import { isValidRule, type GiftRule } from './gifts';
 // 配置持久化：server/data/settings.json（配置）+ server/data/auth.json（凭据）
 // 旧 server/.env 不再读取、不再写入、不再删除（plan D27/D28）
 
-export type QueueMode = 'list' | 'horizontal' | 'flow';
+export type QueueMode = 'list' | 'horizontal';
 
 export interface OverlaySettings {
   showChat: number;
@@ -13,7 +13,10 @@ export interface OverlaySettings {
   scMax: number;
   showQueue: number;
   queueMax: number;
+  /** 横排 / 竖排，与是否流动互相独立 */
   queueMode: QueueMode;
+  /** 流动开关：超出 queueMax 时自动翻页 */
+  queueFlow: number;
   queueFlowSpeed: number;
   queueFlowPause: number;
 }
@@ -49,7 +52,7 @@ export const OVERLAY_LIMITS = {
   queueFlowPause: { min: 0, max: 15 },
 } as const;
 
-export const QUEUE_MODES: QueueMode[] = ['list', 'horizontal', 'flow'];
+export const QUEUE_MODES: QueueMode[] = ['list', 'horizontal'];
 
 export type WarnFn = (message: string) => void;
 
@@ -66,6 +69,7 @@ export function defaultSettings(): AppSettings {
       showQueue: 1,
       queueMax: 6,
       queueMode: 'list',
+      queueFlow: 0,
       queueFlowSpeed: 3,
       queueFlowPause: 2,
     },
@@ -144,11 +148,16 @@ export function normalizeSettings(raw: unknown, warn: WarnFn = defaultWarn): App
 
   const rawOverlay = asRecord(root.overlay);
   const defaultsOverlay = defaults.overlay;
-  const mode = String(rawOverlay.queueMode ?? defaultsOverlay.queueMode) as QueueMode;
-  const queueMode = QUEUE_MODES.includes(mode) ? mode : (() => {
+  // 旧版本的 queueMode='flow' 是「竖排 + 流动」的独立形态，直接迁移成新模型
+  const legacyFlow = rawOverlay.queueMode === 'flow';
+  const rawMode = legacyFlow ? 'list' : String(rawOverlay.queueMode ?? defaultsOverlay.queueMode);
+  const queueMode = (QUEUE_MODES as string[]).includes(rawMode) ? (rawMode as QueueMode) : (() => {
     warn(`overlay.queueMode 非法（${String(rawOverlay.queueMode)}），已回退默认值 list`);
     return defaultsOverlay.queueMode;
   })();
+  const queueFlow = legacyFlow
+    ? 1
+    : pickFlag(rawOverlay.queueFlow, defaultsOverlay.queueFlow, 'overlay.queueFlow', warn);
 
   const overlay: OverlaySettings = {
     showChat: pickFlag(rawOverlay.showChat, defaultsOverlay.showChat, 'overlay.showChat', warn),
@@ -157,6 +166,7 @@ export function normalizeSettings(raw: unknown, warn: WarnFn = defaultWarn): App
     showQueue: pickFlag(rawOverlay.showQueue, defaultsOverlay.showQueue, 'overlay.showQueue', warn),
     queueMax: pickInt(rawOverlay.queueMax, OVERLAY_LIMITS.queueMax.min, OVERLAY_LIMITS.queueMax.max, defaultsOverlay.queueMax, 'overlay.queueMax', warn),
     queueMode,
+    queueFlow,
     queueFlowSpeed: pickInt(rawOverlay.queueFlowSpeed, OVERLAY_LIMITS.queueFlowSpeed.min, OVERLAY_LIMITS.queueFlowSpeed.max, defaultsOverlay.queueFlowSpeed, 'overlay.queueFlowSpeed', warn),
     queueFlowPause: pickInt(rawOverlay.queueFlowPause, OVERLAY_LIMITS.queueFlowPause.min, OVERLAY_LIMITS.queueFlowPause.max, defaultsOverlay.queueFlowPause, 'overlay.queueFlowPause', warn),
   };

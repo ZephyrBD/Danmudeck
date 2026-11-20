@@ -26,6 +26,7 @@ export function saveOverlay(body: {
   showQueue: number
   queueMax: number
   queueMode: string
+  queueFlow: number
   queueFlowSpeed: number
   queueFlowPause: number
 }): Promise<{ data: ApiResult }> {

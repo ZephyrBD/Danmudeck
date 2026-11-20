@@ -28,6 +28,7 @@ const overlay = ref<OverlayData>({
   showQueue: 1,
   queueMax: 6,
   queueMode: 'list',
+  queueFlow: 0,
   queueFlowSpeed: 3,
   queueFlowPause: 2,
 })

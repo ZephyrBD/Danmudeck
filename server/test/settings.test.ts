@@ -26,12 +26,13 @@ function collectWarnings(): { warnings: string[]; warn: (m: string) => void } {
   return { warnings, warn: (m: string) => { warnings.push(m); } };
 }
 
-test('defaultSettings 含流动字段默认值', () => {
+test('defaultSettings 含流动开关与流动参数默认值', () => {
   const d = defaultSettings();
   assert.strictEqual(d.roomId, null);
   assert.strictEqual(d.queue.enterKey, '排队');
   assert.strictEqual(d.queue.leaveKey, '取消排队');
   assert.strictEqual(d.overlay.queueMode, 'list');
+  assert.strictEqual(d.overlay.queueFlow, 0);
   assert.strictEqual(d.overlay.queueFlowSpeed, 3);
   assert.strictEqual(d.overlay.queueFlowPause, 2);
   assert.deepStrictEqual(d.giftRules, []);
@@ -59,7 +60,8 @@ test('saveSettings 后 loadSettings 原样读回', () => {
       scMax: 2,
       showQueue: 1,
       queueMax: 4,
-      queueMode: 'flow',
+      queueMode: 'horizontal',
+      queueFlow: 1,
       queueFlowSpeed: 5,
       queueFlowPause: 1,
     },
@@ -82,6 +84,7 @@ test('normalizeSettings 非法值逐项回退默认并打日志', () => {
         showQueue: 1,
         queueMax: 'abc',
         queueMode: 'diagonal',
+        queueFlow: 5,
         queueFlowSpeed: 0,
         queueFlowPause: 99,
       },
@@ -97,6 +100,7 @@ test('normalizeSettings 非法值逐项回退默认并打日志', () => {
   assert.strictEqual(s.overlay.scMax, d.overlay.scMax);
   assert.strictEqual(s.overlay.queueMax, d.overlay.queueMax);
   assert.strictEqual(s.overlay.queueMode, 'list');
+  assert.strictEqual(s.overlay.queueFlow, 0);
   assert.strictEqual(s.overlay.queueFlowSpeed, 3);
   assert.strictEqual(s.overlay.queueFlowPause, 2);
   assert.deepStrictEqual(s.giftRules, []);
@@ -108,7 +112,7 @@ test('normalizeSettings 合法值保留，非法礼物规则被过滤', () => {
   const s = normalizeSettings(
     {
       roomId: 42,
-      overlay: { queueMode: 'flow', queueFlowSpeed: 15, queueFlowPause: 0, queueMax: 50 },
+      overlay: { queueMode: 'horizontal', queueFlow: 1, queueFlowSpeed: 15, queueFlowPause: 0, queueMax: 50 },
       giftRules: [
         { giftId: 1, threshold: 5, mode: 'up', steps: 2 },
         { giftId: 0, threshold: 5, mode: 'top' },
@@ -117,12 +121,27 @@ test('normalizeSettings 合法值保留，非法礼物规则被过滤', () => {
     warn
   );
   assert.strictEqual(s.roomId, 42);
-  assert.strictEqual(s.overlay.queueMode, 'flow');
+  assert.strictEqual(s.overlay.queueMode, 'horizontal');
+  assert.strictEqual(s.overlay.queueFlow, 1);
   assert.strictEqual(s.overlay.queueFlowSpeed, 15);
   assert.strictEqual(s.overlay.queueFlowPause, 0);
   assert.strictEqual(s.overlay.queueMax, 50);
   assert.strictEqual(s.giftRules.length, 1);
   assert.ok(warnings.some((w) => w.includes('giftRules')));
+});
+
+test('normalizeSettings 把旧 queueMode=flow 迁移成竖排 + 流动', () => {
+  const { warnings, warn } = collectWarnings();
+  const s = normalizeSettings(
+    { overlay: { queueMode: 'flow', queueMax: 6, queueFlowSpeed: 4, queueFlowPause: 1 } },
+    warn
+  );
+  assert.strictEqual(s.overlay.queueMode, 'list');
+  assert.strictEqual(s.overlay.queueFlow, 1);
+  assert.strictEqual(s.overlay.queueFlowSpeed, 4);
+  assert.strictEqual(s.overlay.queueFlowPause, 1);
+  // 迁移是正常路径，不应产生告警
+  assert.deepStrictEqual(warnings, []);
 });
 
 test('normalizeSettings 排队词相同时回退默认', () => {

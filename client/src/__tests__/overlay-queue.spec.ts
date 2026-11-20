@@ -40,7 +40,7 @@ const QUEUE = [
 describe('OverlayQueue', () => {
   beforeEach(() => {
     wsListeners.clear()
-    overlayResponse = { showChat: 1, chatMax: 8, scMax: 3, showQueue: 1, queueMax: 3, queueMode: 'list' }
+    overlayResponse = { showChat: 1, chatMax: 8, scMax: 3, showQueue: 1, queueMax: 3, queueMode: 'list', queueFlow: 0 }
   })
 
   it('未收到队列消息时展示占位卡「虚位以待」', async () => {
@@ -68,21 +68,43 @@ describe('OverlayQueue', () => {
     expect(wrapper.find('.overlay_queue').exists()).toBe(false)
   })
 
-  it('流动形态渲染全部未完成条目并限高容器', async () => {
-    overlayResponse = { showQueue: 1, queueMax: 2, queueMode: 'flow', queueFlowSpeed: 1, queueFlowPause: 0 }
+  it('竖排 + 流动：渲染全部未完成条目并在竖直方向翻页', async () => {
+    overlayResponse = { showQueue: 1, queueMax: 2, queueMode: 'list', queueFlow: 1, queueFlowSpeed: 1, queueFlowPause: 0 }
     const wrapper = mount(OverlayQueue)
     await flushPromises()
     emit('queue', QUEUE)
     await flushPromises()
-    expect(wrapper.find('.overlay_queue.flow').exists()).toBe(true)
-    expect(wrapper.find('.flow_viewport').exists()).toBe(true)
+    expect(wrapper.find('.overlay_queue.list').exists()).toBe(true)
+    expect(wrapper.find('.flow_viewport.flow_y').exists()).toBe(true)
     // 3 条未完成全部渲染（不是截到 queueMax=2）
     expect(wrapper.findAll('.flow_track .q_card')).toHaveLength(3)
     expect(wrapper.text()).toContain('d')
   })
 
+  it('横排 + 流动：同样渲染全部条目，翻页方向改为横向', async () => {
+    overlayResponse = { showQueue: 1, queueMax: 2, queueMode: 'horizontal', queueFlow: 1, queueFlowSpeed: 1, queueFlowPause: 0 }
+    const wrapper = mount(OverlayQueue)
+    await flushPromises()
+    emit('queue', QUEUE)
+    await flushPromises()
+    expect(wrapper.find('.overlay_queue.horizontal').exists()).toBe(true)
+    expect(wrapper.find('.flow_viewport.flow_x').exists()).toBe(true)
+    expect(wrapper.findAll('.flow_track .q_card')).toHaveLength(3)
+  })
+
+  it('关掉流动后回到普通横排并截断到 queueMax', async () => {
+    overlayResponse = { showQueue: 1, queueMax: 2, queueMode: 'horizontal', queueFlow: 0 }
+    const wrapper = mount(OverlayQueue)
+    await flushPromises()
+    emit('queue', QUEUE)
+    await flushPromises()
+    expect(wrapper.find('.overlay_queue.horizontal').exists()).toBe(true)
+    expect(wrapper.find('.flow_viewport').exists()).toBe(false)
+    expect(wrapper.findAll('.q_wrap .q_card')).toHaveLength(2)
+  })
+
   it('流动形态在 prefers-reduced-motion 下不动画', async () => {
-    overlayResponse = { showQueue: 1, queueMax: 1, queueMode: 'flow', queueFlowSpeed: 1, queueFlowPause: 0 }
+    overlayResponse = { showQueue: 1, queueMax: 1, queueMode: 'list', queueFlow: 1, queueFlowSpeed: 1, queueFlowPause: 0 }
     const original = window.matchMedia
     window.matchMedia = ((q: string) => ({
       matches: q.includes('reduce'),

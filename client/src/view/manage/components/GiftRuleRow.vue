@@ -9,12 +9,12 @@
       <ElInputNumber v-model="model.threshold" :min="1" :max="100000" :controls="false" class="num" />
       个
     </label>
-    <ElSelect v-model="model.mode" class="mode_select">
+    <ElSelect v-model="model.mode">
       <el-option label="置顶" value="top" />
       <el-option label="前进" value="up" />
     </ElSelect>
     <label v-if="model.mode === 'up'" class="mini">
-      <ElInputNumber v-model="model.steps" :min="1" :max="50" :controls="false" class="num small" />
+      <ElInputNumber v-model="model.steps" :min="1" :max="50" :controls="false" class="num small " />
       位
     </label>
     <ElButton type="danger" plain size="small" :icon="Close" title="删除该规则" @click="$emit('remove')" />
@@ -50,7 +50,7 @@ function onGiftChange(): void {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* 禁止换行，核心改动 */
   padding: 8px 12px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -60,6 +60,7 @@ function onGiftChange(): void {
 .gift_select {
   flex: 1;
   min-width: 110px;
+  max-width: 260px; /* 限制礼物下拉最大宽度，防止它无限拉长挤爆后面 */
 }
 
 .mini {
@@ -71,10 +72,10 @@ function onGiftChange(): void {
   white-space: nowrap;
 
   .num {
-    width: 80px;
+    width: 60px;
 
     &.small {
-      width: 70px;
+      width: 64px; /* 前进位数再收窄一点，64足够放1~50 */
     }
   }
 }

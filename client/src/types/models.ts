@@ -34,7 +34,8 @@ export interface QueueItem {
   moves?: QueueMove[]
 }
 
-export type QueueMode = 'list' | 'horizontal' | 'flow'
+/** 排列方式：竖排 / 横排；是否流动由 queueFlow 单独控制 */
+export type QueueMode = 'list' | 'horizontal'
 
 export interface OverlayData {
   showChat?: number
@@ -43,6 +44,8 @@ export interface OverlayData {
   showQueue?: number
   queueMax?: number
   queueMode?: QueueMode
+  /** 流动开关：超出 queueMax 时自动翻页 */
+  queueFlow?: number
   queueFlowSpeed?: number
   queueFlowPause?: number
 }

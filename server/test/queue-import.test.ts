@@ -34,20 +34,38 @@ async function postOverlay(body: Record<string, unknown>): Promise<{ status: num
 
 const BASE_OVERLAY = { showChat: 1, chatMax: 8, scMax: 3, showQueue: 1, queueMax: 6 };
 
-test('POST /api/overlay 接受 flow 模式并回写流动字段', async () => {
+test('POST /api/overlay 横排 / 竖排都能带流动开关并回写', async () => {
   const saved = { ...settings.overlay };
   try {
-    const r = await postOverlay({ ...BASE_OVERLAY, queueMode: 'flow', queueFlowSpeed: 5, queueFlowPause: 0 });
-    assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.json.ok, true);
-    assert.strictEqual(r.json.overlay.queueMode, 'flow');
-    assert.strictEqual(r.json.overlay.queueFlowSpeed, 5);
-    assert.strictEqual(r.json.overlay.queueFlowPause, 0);
+    for (const mode of ['list', 'horizontal'] as const) {
+      const r = await postOverlay({ ...BASE_OVERLAY, queueMode: mode, queueFlow: 1, queueFlowSpeed: 5, queueFlowPause: 0 });
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.json.ok, true);
+      assert.strictEqual(r.json.overlay.queueMode, mode);
+      assert.strictEqual(r.json.overlay.queueFlow, 1);
+      assert.strictEqual(r.json.overlay.queueFlowSpeed, 5);
+      assert.strictEqual(r.json.overlay.queueFlowPause, 0);
 
-    const g = await fetch(`${baseUrl}/api/overlay`);
-    const persisted: any = await g.json();
-    assert.strictEqual(persisted.queueMode, 'flow');
-    assert.strictEqual(persisted.queueFlowSpeed, 5);
+      const g = await fetch(`${baseUrl}/api/overlay`);
+      const persisted: any = await g.json();
+      assert.strictEqual(persisted.queueMode, mode);
+      assert.strictEqual(persisted.queueFlow, 1);
+      assert.strictEqual(persisted.queueFlowSpeed, 5);
+    }
+  } finally {
+    Object.assign(settings.overlay, saved);
+  }
+});
+
+test('POST /api/overlay 可以单独关掉流动而不动排列方式', async () => {
+  const saved = { ...settings.overlay };
+  try {
+    settings.overlay.queueMode = 'horizontal';
+    settings.overlay.queueFlow = 1;
+    const r = await postOverlay({ ...BASE_OVERLAY, queueFlow: 0 });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.json.overlay.queueMode, 'horizontal');
+    assert.strictEqual(r.json.overlay.queueFlow, 0);
   } finally {
     Object.assign(settings.overlay, saved);
   }
@@ -63,25 +81,29 @@ test('POST /api/overlay 流动字段越界或非整数返回 400', async () => {
     { queueFlowPause: 16 },
     { queueFlowPause: 1.5 },
   ]) {
-    const r = await postOverlay({ ...BASE_OVERLAY, queueMode: 'flow', ...body });
+    const r = await postOverlay({ ...BASE_OVERLAY, queueFlow: 1, ...body });
     assert.strictEqual(r.status, 400, `应拒绝 ${JSON.stringify(body)}`);
     assert.strictEqual(r.json.ok, false);
   }
 });
 
-test('POST /api/overlay 拒绝未知排队模式', async () => {
-  const r = await postOverlay({ ...BASE_OVERLAY, queueMode: 'diagonal' });
-  assert.strictEqual(r.status, 400);
-  assert.match(r.json.error, /list、horizontal 或 flow/);
+test('POST /api/overlay 拒绝未知排队模式（含已移除的 flow）', async () => {
+  for (const mode of ['diagonal', 'flow']) {
+    const r = await postOverlay({ ...BASE_OVERLAY, queueMode: mode });
+    assert.strictEqual(r.status, 400, `应拒绝 queueMode=${mode}`);
+    assert.match(r.json.error, /list（竖排）或 horizontal（横排）/);
+  }
 });
 
 test('POST /api/overlay 未传流动字段时沿用当前值', async () => {
   const saved = { ...settings.overlay };
   try {
+    settings.overlay.queueFlow = 1;
     settings.overlay.queueFlowSpeed = 7;
     settings.overlay.queueFlowPause = 4;
     const r = await postOverlay({ ...BASE_OVERLAY, queueMode: 'list' });
     assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.json.overlay.queueFlow, 1);
     assert.strictEqual(r.json.overlay.queueFlowSpeed, 7);
     assert.strictEqual(r.json.overlay.queueFlowPause, 4);
   } finally {
@@ -260,7 +282,7 @@ test('POST /api/queue/import 重复的条目 id 会被补发新雪花 ID', async
 test('settings.ts 导出的默认值与校验常量保持稳定', () => {
   assert.deepStrictEqual(settingsModule.OVERLAY_LIMITS.queueFlowSpeed, { min: 1, max: 15 });
   assert.deepStrictEqual(settingsModule.OVERLAY_LIMITS.queueFlowPause, { min: 0, max: 15 });
-  assert.deepStrictEqual(settingsModule.QUEUE_MODES, ['list', 'horizontal', 'flow']);
+  assert.deepStrictEqual(settingsModule.QUEUE_MODES, ['list', 'horizontal']);
 });
 
 test('GET /api/status 快照含 uname 字符串', async () => {

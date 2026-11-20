@@ -38,7 +38,7 @@ const STATUS = {
 
 const OVERLAY = {
   showChat: 1, chatMax: 8, scMax: 3, showQueue: 1, queueMax: 4,
-  queueMode: 'flow', queueFlowSpeed: 3, queueFlowPause: 2,
+  queueMode: 'list', queueFlow: 1, queueFlowSpeed: 3, queueFlowPause: 2,
 }
 
 function writeFixture(): void {

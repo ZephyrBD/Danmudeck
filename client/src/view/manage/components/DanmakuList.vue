@@ -88,12 +88,16 @@ void props
 <style scoped lang="scss">
 .list_wrap {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .danmaku_list {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 16px;
 }
