@@ -93,6 +93,8 @@ const login = new QrLogin({
     state.uid = uid;
     state.statusText = '已登录，连接中…';
     cookieCheckDone = false;
+    // 扫码拿到的 Cookie 必须落盘，否则重启后 data/auth.json 仍是空值（只能重扫）
+    storeAuth({ cookie, uid });
     log(`[登录] 成功 uid=${uid}，Cookie 已保存到 ${AUTH_FILE}`);
     client.setCredentials(cookie, uid);
     connectClient();
@@ -719,5 +721,5 @@ if (isEntry) {
   });
 }
 
-export { app, server, queue, giftEngine, state, config, settings, auth };
+export { app, server, queue, giftEngine, state, config, settings, auth, login };
 export const danmakuClient = client;

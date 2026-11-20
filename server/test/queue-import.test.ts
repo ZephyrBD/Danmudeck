@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { app, queue, settings, danmakuClient, state } from '../index';
+import { app, queue, settings, danmakuClient, state, login } from '../index';
 import * as settingsModule from '../settings';
 
 let baseUrl = '';
@@ -317,5 +317,27 @@ test('POST /api/logout 同时清掉弹幕客户端里的旧账号凭据', async 
   } finally {
     danmakuClient.clearCredentials();
     state.uid = 0;
+  }
+});
+
+test('扫码登录成功后 Cookie 立即落盘（回归：重启后不必重扫）', () => {
+  // 回归：onLoggedIn 曾只调 client.setCredentials，日志却说「已保存」，重启后 auth.json 仍为空
+  const savedAuth = settingsModule.loadAuth();
+  try {
+    settingsModule.saveAuth(settingsModule.defaultAuth());
+    assert.ok(login.onLoggedIn, '扫码回调应已注册');
+    login.onLoggedIn('SESSDATA=fresh; DedeUserID=12345', 12345);
+
+    const onDisk = JSON.parse(fs.readFileSync(settingsModule.AUTH_FILE, 'utf8'));
+    assert.strictEqual(onDisk.cookie, 'SESSDATA=fresh; DedeUserID=12345');
+    assert.strictEqual(onDisk.uid, 12345);
+    assert.ok(onDisk.updatedAt, '应记录写入时间');
+    assert.strictEqual(state.uid, 12345);
+    assert.strictEqual(state.loginRequired, false);
+  } finally {
+    settingsModule.saveAuth(savedAuth);
+    danmakuClient.clearCredentials();
+    state.uid = 0;
+    state.loginRequired = true;
   }
 });
