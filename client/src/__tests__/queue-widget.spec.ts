@@ -3,9 +3,12 @@ import { mount } from './helpers/mount'
 import QueueWidget from '@/view/manage/components/QueueWidget.vue'
 
 const baseQueue = [
-  { uid: 1, user: 'alice', position: 1, done: false, joinedAt: Date.now() - 8 * 60000 },
-  { uid: 2, user: 'bob', position: 2, done: false, joinedAt: Date.now() - 60000, skippedAt: Date.now() - 30000 },
-  { uid: 3, user: 'carol', position: 3, done: true, joinedAt: 0, completedAt: 0 },
+  { id: 'q1', uid: 1, user: 'alice', position: 1, done: false, joinedAt: Date.now() - 8 * 60000 },
+  {
+    id: 'q2', uid: 2, user: 'bob', position: 2, done: false, joinedAt: Date.now() - 60000,
+    moves: [{ id: 'm1', at: Date.now() - 30000, from: 3, to: 2, by: 'gift' as const, gift: '辣条' }],
+  },
+  { id: 'q3', uid: 3, user: 'carol', position: 3, done: true, joinedAt: 0, completedAt: 0 },
 ]
 
 describe('QueueWidget', () => {
@@ -71,6 +74,49 @@ describe('QueueWidget', () => {
   it('空队列展示入队提示', () => {
     const wrapper = mount(QueueWidget, { props: { queue: [], enterKey: '上车' } })
     expect(wrapper.text()).toContain('观众发「上车」入队')
+  })
+
+  it('分上下两区：排队中在上，已完成在下', () => {
+    const wrapper = mount(QueueWidget, { props: { queue: baseQueue } })
+    const active = wrapper.find('.active_section')
+    const done = wrapper.find('.done_section')
+    expect(active.exists()).toBe(true)
+    expect(done.exists()).toBe(true)
+    expect(active.findAll('.q_item').map((r) => r.find('.user').text())).toEqual(['alice', 'bob'])
+    expect(done.findAll('.q_item').map((r) => r.find('.user').text())).toEqual(['carol'])
+    expect(active.find('.section_count').text()).toBe('2')
+    expect(done.find('.section_count').text()).toBe('1')
+  })
+
+  it('已完成区按完成时间倒序，最新完成的在最上', () => {
+    const now = Date.now()
+    const queue = [
+      { id: 'a', uid: 1, user: 'early', position: 1, done: true, joinedAt: 0, completedAt: now - 5000 },
+      { id: 'b', uid: 2, user: 'late', position: 2, done: true, joinedAt: 0, completedAt: now - 1000 },
+      { id: 'c', uid: 3, user: 'mid', position: 3, done: true, joinedAt: 0, completedAt: now - 3000 },
+    ]
+    const wrapper = mount(QueueWidget, { props: { queue } })
+    expect(wrapper.findAll('.done_section .user').map((n) => n.text())).toEqual(['late', 'mid', 'early'])
+  })
+
+  it('下区为空时仍渲染分区占位', () => {
+    const queue = [{ id: 'a', uid: 1, user: 'solo', position: 1, done: false, joinedAt: Date.now() }]
+    const wrapper = mount(QueueWidget, { props: { queue } })
+    const done = wrapper.find('.done_section')
+    expect(done.exists()).toBe(true)
+    expect(done.findAll('.q_item')).toHaveLength(0)
+    expect(done.text()).toContain('还没有完成的委托')
+  })
+
+  it('拖动区交换后按钮语义不变：导出在上、导入在下', () => {
+    const wrapper = mount(QueueWidget, { props: { queue: baseQueue } })
+    const actions = wrapper.findAll('.actions button')
+    // 0=导出 1=导入 2=清除已完成 3=清空
+    expect(actions[0].attributes('title')).toContain('导出')
+    expect(actions[1].attributes('title')).toContain('导入')
+    // 图标组件名通过 svg 的 class 无法稳定判定，改为断言两者图标不同
+    const icons = actions.slice(0, 2).map((b) => b.find('svg').exists())
+    expect(icons).toEqual([true, true])
   })
 
   it('四个图标按钮：保存 / 加载 / 清除已完成 / 清空，空队列时保存与清空禁用', () => {

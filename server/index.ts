@@ -6,7 +6,8 @@ import config, { auth, settings } from './config';
 import { DanmakuClient, STATUS } from './danmaku';
 import { QrLogin, checkCookieLogin } from './login';
 import { GiftEngine, normalizeRules, type GiftRule } from './gifts';
-import { Queue, type QueueItemInput } from './queue';
+import { Queue, type QueueItemInput, type QueueMove } from './queue';
+import { snowflake } from './snowflake';
 import {
   saveSettings,
   saveAuth,
@@ -315,7 +316,7 @@ client.on('gift', (d: any) => {
         uid: d.uid,
         user: d.user,
         color: '',
-      });
+      }, rule.giftName || d.giftName);
       if (r.ok) {
         const how = rule.mode === 'top' ? '置顶' : `前进 ${rule.steps} 位`;
         log(`[队列] ${d.user || '匿名'} 送出 ${rule.giftName || rule.giftId} 达阈值 → ${how}，现第 ${r.position} 位`);
@@ -429,7 +430,8 @@ app.post('/api/queue/import', (req: Request, res: Response) => {
   if (items.length > MAX_IMPORT) {
     return res.status(400).json({ ok: false, error: `一次最多导入 ${MAX_IMPORT} 条` });
   }
-  const seen = new Set<number>();
+  const seenIds = new Set<string>();
+  const seenMoveIds = new Set<string>();
   const now = Date.now();
   const maxTs = now + 24 * 60 * 60 * 1000;
   const badTs = (v: number): boolean => !Number.isFinite(v) || v <= 0 || v > maxTs;
@@ -441,10 +443,7 @@ app.post('/api/queue/import', (req: Request, res: Response) => {
     if (!Number.isInteger(uid) || uid <= 0) {
       return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：uid 必须是正整数` });
     }
-    if (seen.has(uid)) {
-      return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：uid ${uid} 重复` });
-    }
-    seen.add(uid);
+    // 去重按雪花 ID：同一 uid 的已完成记录与重新排队记录允许共存
     if (badTs(joinedAt)) {
       return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：joinedAt 必须是合理的时间戳` });
     }
@@ -456,20 +455,49 @@ app.post('/api/queue/import', (req: Request, res: Response) => {
     if (hasCompleted && badTs(rawCompleted)) {
       return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：completedAt 必须是合理的时间戳` });
     }
-    const rawSkipped = Number(r.skippedAt);
-    const hasSkipped = r.skippedAt !== undefined && r.skippedAt !== null && r.skippedAt !== 0;
-    if (hasSkipped && badTs(rawSkipped)) {
-      return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：skippedAt 必须是合理的时间戳` });
+    // moves：位置变动历史，逐条校验后原样保留
+    let moves: QueueMove[] | undefined;
+    if (r.moves !== undefined) {
+      if (!Array.isArray(r.moves)) {
+        return res.status(400).json({ ok: false, error: `第 ${i + 1} 条：moves 必须是数组` });
+      }
+      moves = [];
+      for (const [j, m] of r.moves.entries()) {
+        const mv = (m ?? {}) as Record<string, unknown>;
+        const at = Number(mv.at);
+        const from = Number(mv.from);
+        const to = Number(mv.to);
+        if (badTs(at)) {
+          return res.status(400).json({ ok: false, error: `第 ${i + 1} 条第 ${j + 1} 个 moves：at 必须是合理的时间戳` });
+        }
+        if (!Number.isInteger(from) || from < 1 || !Number.isInteger(to) || to < 1) {
+          return res.status(400).json({ ok: false, error: `第 ${i + 1} 条第 ${j + 1} 个 moves：from/to 必须是正整数` });
+        }
+        if (mv.by !== 'gift' && mv.by !== 'admin') {
+          return res.status(400).json({ ok: false, error: `第 ${i + 1} 条第 ${j + 1} 个 moves：by 只能是 gift 或 admin` });
+        }
+        // id 缺失或重复时补发新的雪花 ID，保证 key 稳定唯一
+        const rawId = typeof mv.id === 'string' ? mv.id : '';
+        const mid = rawId && !seenMoveIds.has(rawId) ? rawId : snowflake();
+        seenMoveIds.add(mid);
+        const move: QueueMove = { id: mid, at, from, to, by: mv.by };
+        if (typeof mv.gift === 'string' && mv.gift) move.gift = mv.gift.slice(0, 50);
+        moves.push(move);
+      }
     }
     const completedAt = r.done ? (hasCompleted ? rawCompleted : now) : 0;
+    const rawId = typeof r.id === 'string' ? r.id : '';
+    const entryId = rawId && !seenIds.has(rawId) ? rawId : snowflake();
+    seenIds.add(entryId);
     normalized.push({
+      id: entryId,
       uid,
       user: String(r.user ?? '').slice(0, 50) || '匿名',
       color: typeof r.color === 'string' ? r.color : '',
       joinedAt,
       done: r.done,
       completedAt,
-      skippedAt: hasSkipped ? rawSkipped : undefined,
+      moves: moves && moves.length ? moves : undefined,
     });
   }
   queue.replace(normalized);
@@ -515,7 +543,7 @@ app.post('/api/queue/move', (req: Request, res: Response) => {
   if (!Number.isInteger(toIndex) || toIndex < 0) {
     return res.status(400).json({ ok: false, error: 'toIndex 必须是非负整数' });
   }
-  const r = queue.move(uid, toIndex);
+  const r = queue.move(uid, toIndex, { by: 'admin' });
   if (!r.ok) {
     const msg = r.reason === 'not_found' ? '该用户不在队列中' : '目标位置无效';
     return res.status(r.reason === 'not_found' ? 404 : 400).json({ ok: false, error: msg });

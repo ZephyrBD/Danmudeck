@@ -1,4 +1,4 @@
-import type { QueueImportItem, QueueItem } from '@/types/models'
+import type { QueueImportItem, QueueItem, QueueMove } from '@/types/models'
 
 // 队列导出 / 解析 / 合并（plan §7 / §8）
 // 数组顺序即队列顺序；同 uid 保留 joinedAt 更早者
@@ -8,13 +8,14 @@ export const QUEUE_APP = 'danmudeck'
 export const MAX_IMPORT_ITEMS = 1000
 
 export interface QueueFileItem {
+  id?: string
   uid: number
   user: string
   color: string
   joinedAt: number
   done: boolean
   completedAt: number
-  skippedAt?: number
+  moves?: QueueMove[]
 }
 
 export interface QueueFile {
@@ -76,6 +77,7 @@ export function buildExportFile(queue: QueueItem[], now: Date = new Date()): Que
     exportedAt: now.toISOString(),
     items: queue.map((it) => {
       const item: QueueFileItem = {
+        id: it.id,
         uid: it.uid,
         user: it.user || '匿名',
         color: it.color ?? '',
@@ -83,10 +85,36 @@ export function buildExportFile(queue: QueueItem[], now: Date = new Date()): Que
         done: !!it.done,
         completedAt: it.completedAt ?? 0,
       }
-      if (it.skippedAt) item.skippedAt = it.skippedAt
+      if (it.moves && it.moves.length) item.moves = it.moves
       return item
     }),
   }
+}
+
+/** 逐条校验 moves 数组；非法条目整条丢弃，避免脏数据流进预览 */
+function toMoves(raw: unknown): QueueMove[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: QueueMove[] = []
+  for (const m of raw) {
+    if (!m || typeof m !== 'object') continue
+    const r = m as Record<string, unknown>
+    const at = Number(r.at)
+    const from = Number(r.from)
+    const to = Number(r.to)
+    if (!Number.isFinite(at) || at <= 0) continue
+    if (!Number.isInteger(from) || from < 1 || !Number.isInteger(to) || to < 1) continue
+    if (r.by !== 'gift' && r.by !== 'admin') continue
+    const move: QueueMove = {
+      id: typeof r.id === 'string' && r.id ? r.id : `local-${at}-${out.length}`,
+      at,
+      from,
+      to,
+      by: r.by,
+    }
+    if (typeof r.gift === 'string' && r.gift) move.gift = r.gift.slice(0, 50)
+    out.push(move)
+  }
+  return out.length ? out : undefined
 }
 
 function toFileItem(raw: unknown): QueueFileItem | null {
@@ -98,6 +126,7 @@ function toFileItem(raw: unknown): QueueFileItem | null {
   if (!Number.isFinite(joinedAt)) return null
   if (typeof r.done !== 'boolean') return null
   const item: QueueFileItem = {
+    id: typeof r.id === 'string' && r.id ? r.id : '',
     uid,
     user: String(r.user ?? '').slice(0, 50) || '匿名',
     color: typeof r.color === 'string' ? r.color : '',
@@ -105,7 +134,8 @@ function toFileItem(raw: unknown): QueueFileItem | null {
     done: r.done,
     completedAt: Number.isFinite(Number(r.completedAt)) ? Number(r.completedAt) : 0,
   }
-  if (Number.isFinite(Number(r.skippedAt)) && Number(r.skippedAt) > 0) item.skippedAt = Number(r.skippedAt)
+  const moves = toMoves(r.moves)
+  if (moves) item.moves = moves
   return item
 }
 
@@ -123,7 +153,8 @@ export function parseQueueFile(text: string): ParseResult {
   if (!Array.isArray(root.items)) {
     return { ok: false, error: '这不是 DanmuDeck 的队列文件：缺少 items 数组', items: [], ignored: 0 }
   }
-  const seen = new Set<number>()
+  // 去重键：优先雪花 ID（同 uid 的已完成记录与重新排队记录可共存），无 ID 时回退 uid
+  const seen = new Set<string>()
   const items: QueueFileItem[] = []
   let ignored = 0
   for (const raw of root.items) {
@@ -133,11 +164,12 @@ export function parseQueueFile(text: string): ParseResult {
       continue
     }
     const item = toFileItem(raw)
-    if (!item || seen.has(item.uid)) {
+    const key = item ? (item.id ? `id:${item.id}` : `uid:${item.uid}`) : ''
+    if (!item || seen.has(key)) {
       ignored += 1
       continue
     }
-    seen.add(item.uid)
+    seen.add(key)
     items.push(item)
   }
   return { ok: true, items, ignored }
@@ -148,25 +180,28 @@ export function parseQueueFile(text: string): ParseResult {
  * 同 uid 由 joinedAt 更早者胜出（plan §8）。
  */
 export function mergePreview(local: QueueItem[], fileItems: QueueFileItem[]): MergePreview {
-  const fileByUid = new Map<number, QueueFileItem>()
+  // 用雪花 ID（缺省回退 uid）定位，避免同一 uid 的已完成记录与重新排队记录互相覆盖
+  const keyOf = (it: { id?: string; uid: number }): string => (it.id ? `id:${it.id}` : `uid:${it.uid}`)
+  const fileById = new Map<string, QueueFileItem>()
   for (const item of fileItems) {
-    const prev = fileByUid.get(item.uid)
-    if (!prev || item.joinedAt < prev.joinedAt) fileByUid.set(item.uid, item)
+    const prev = fileById.get(keyOf(item))
+    if (!prev || item.joinedAt < prev.joinedAt) fileById.set(keyOf(item), item)
   }
 
   const rows: MergeRow[] = []
-  const localUids = new Set<number>()
+  const localKeys = new Set<string>()
   let replaced = 0
   let kept = 0
 
   for (const it of local) {
-    localUids.add(it.uid)
-    const fromFile = fileByUid.get(it.uid)
+    localKeys.add(keyOf(it))
+    const fromFile = fileById.get(keyOf(it))
     if (fromFile && fromFile.joinedAt < it.joinedAt) {
       rows.push({ uid: it.uid, item: fromFile, kind: 'replace', checked: true })
       replaced += 1
     } else {
       const localItem: QueueFileItem = {
+        id: it.id,
         uid: it.uid,
         user: it.user || '匿名',
         color: it.color ?? '',
@@ -174,7 +209,7 @@ export function mergePreview(local: QueueItem[], fileItems: QueueFileItem[]): Me
         done: !!it.done,
         completedAt: it.completedAt ?? 0,
       }
-      if (it.skippedAt) localItem.skippedAt = it.skippedAt
+      if (it.moves && it.moves.length) localItem.moves = it.moves
       rows.push({ uid: it.uid, item: localItem, kind: 'keep', checked: true })
       if (fromFile) kept += 1
     }
@@ -183,8 +218,8 @@ export function mergePreview(local: QueueItem[], fileItems: QueueFileItem[]): Me
   let added = 0
   const orderedFileItems = fileItems.slice().sort((a, b) => a.joinedAt - b.joinedAt)
   for (const item of orderedFileItems) {
-    if (localUids.has(item.uid)) continue
-    if (fileByUid.get(item.uid) !== item) continue
+    if (localKeys.has(keyOf(item))) continue
+    if (fileById.get(keyOf(item)) !== item) continue
     rows.push({ uid: item.uid, item, kind: 'append', checked: true })
     added += 1
   }
@@ -201,6 +236,7 @@ export function buildImportItems(rows: MergeRow[]): QueueImportItem[] {
     .filter((r) => r.checked)
     .map((r) => {
       const item: QueueImportItem = {
+        id: r.item.id,
         uid: r.item.uid,
         user: r.item.user,
         color: r.item.color,
@@ -208,7 +244,7 @@ export function buildImportItems(rows: MergeRow[]): QueueImportItem[] {
         done: r.item.done,
       }
       if (r.item.done) item.completedAt = r.item.completedAt
-      if (r.item.skippedAt) item.skippedAt = r.item.skippedAt
+      if (r.item.moves && r.item.moves.length) item.moves = r.item.moves
       return item
     })
 }

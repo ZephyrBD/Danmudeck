@@ -11,11 +11,11 @@ import {
 import type { QueueItem } from '@/types/models'
 
 function local(uid: number, joinedAt: number, extra: Partial<QueueItem> = {}): QueueItem {
-  return { uid, user: `u${uid}`, position: uid, done: false, joinedAt, ...extra }
+  return { id: `l${uid}-${joinedAt}`, uid, user: `u${uid}`, position: uid, done: false, joinedAt, ...extra }
 }
 
 function fileItem(uid: number, joinedAt: number, extra: Partial<QueueFileItem> = {}): QueueFileItem {
-  return { uid, user: `f${uid}`, color: '', joinedAt, done: false, completedAt: 0, ...extra }
+  return { id: `f${uid}-${joinedAt}`, uid, user: `f${uid}`, color: '', joinedAt, done: false, completedAt: 0, ...extra }
 }
 
 describe('buildExportFile', () => {
@@ -23,7 +23,7 @@ describe('buildExportFile', () => {
     const queue = [
       local(2, 200),
       local(1, 100, { color: '#fff', done: true, completedAt: 300 }),
-      local(3, 300, { skippedAt: 400 }),
+      local(3, 300, { moves: [{ id: 'm1', at: 400, from: 3, to: 1, by: 'gift', gift: '辣条' }] }),
     ]
     const file = buildExportFile(queue, new Date('2026-11-20T08:30:00.000Z'))
     expect(file.app).toBe('danmudeck')
@@ -31,8 +31,8 @@ describe('buildExportFile', () => {
     expect(file.exportedAt).toBe('2026-11-20T08:30:00.000Z')
     expect(file.items.map((i) => i.uid)).toEqual([2, 1, 3])
     expect(file.items[1]).toMatchObject({ uid: 1, color: '#fff', done: true, completedAt: 300 })
-    expect(file.items[2].skippedAt).toBe(400)
-    expect(file.items[0].skippedAt).toBeUndefined()
+    expect(file.items[1].moves).toBeUndefined()
+    expect(file.items[2].moves?.[0]).toMatchObject({ id: 'm1', by: 'gift', gift: '辣条' })
   })
 
   it('文件名带日期与时分', () => {
@@ -47,7 +47,7 @@ describe('parseQueueFile', () => {
     expect(parseQueueFile('{"items":"x"}').error).toMatch(/不是 DanmuDeck 的队列文件/)
   })
 
-  it('单条非法跳过并计入忽略，重复 uid 去重', () => {
+  it('单条非法跳过并计入忽略，同 key 去重', () => {
     const text = JSON.stringify({
       app: 'danmudeck',
       items: [
@@ -55,7 +55,7 @@ describe('parseQueueFile', () => {
         { uid: 0, joinedAt: 1, done: false },
         { uid: 2, joinedAt: 'x', done: false },
         { uid: 3, joinedAt: 1, done: 'yes' },
-        fileItem(1, 150),
+        fileItem(1, 100), // 同 id 重复
         fileItem(4, 400, { done: true, completedAt: 500 }),
       ],
     })
@@ -63,6 +63,20 @@ describe('parseQueueFile', () => {
     expect(r.ok).toBe(true)
     expect(r.items.map((i) => i.uid)).toEqual([1, 4])
     expect(r.ignored).toBe(4)
+  })
+
+  it('同一 uid 的已完成记录与重新排队记录可以共存', () => {
+    const text = JSON.stringify({
+      items: [
+        { id: 'a', uid: 7, user: '甲', joinedAt: 100, done: true, completedAt: 200 },
+        { id: 'b', uid: 7, user: '甲', joinedAt: 300, done: false },
+      ],
+    })
+    const r = parseQueueFile(text)
+    expect(r.ok).toBe(true)
+    expect(r.items).toHaveLength(2)
+    expect(r.items.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(r.ignored).toBe(0)
   })
 
   it('往返：导出结果可被原样解析', () => {
@@ -83,8 +97,8 @@ describe('parseQueueFile', () => {
 })
 
 describe('mergePreview', () => {
-  it('本机记录更早时保留本机，同 uid 不新增', () => {
-    const p = mergePreview([local(1, 100)], [fileItem(1, 200)])
+  it('本机记录更早时保留本机，同一条目不新增', () => {
+    const p = mergePreview([local(1, 100)], [fileItem(1, 200, { id: 'l1-100' })])
     expect(p.rows).toHaveLength(1)
     expect(p.rows[0].kind).toBe('keep')
     expect(p.rows[0].item.joinedAt).toBe(100)
@@ -92,12 +106,19 @@ describe('mergePreview', () => {
   })
 
   it('文件记录更早时原位替换本机记录并默认勾选', () => {
-    const p = mergePreview([local(1, 200), local(2, 300)], [fileItem(1, 100)])
+    const p = mergePreview([local(1, 200), local(2, 300)], [fileItem(1, 100, { id: 'l1-200' })])
     expect(p.rows.map((r) => r.uid)).toEqual([1, 2])
     expect(p.rows[0].kind).toBe('replace')
     expect(p.rows[0].checked).toBe(true)
     expect(p.rows[0].item.joinedAt).toBe(100)
     expect(p.stats.replaced).toBe(1)
+  })
+
+  it('不同 id 的同一 uid 视为不同条目', () => {
+    const p = mergePreview([local(1, 200)], [fileItem(1, 100, { id: 'other-id' })])
+    expect(p.rows).toHaveLength(2)
+    expect(p.stats.added).toBe(1)
+    expect(p.stats.replaced).toBe(0)
   })
 
   it('文件独有条目按文件顺序追加到末尾并默认勾选', () => {

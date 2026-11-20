@@ -125,10 +125,9 @@ test('POST /api/queue/import 已完成项缺 completedAt 时补当前时间', as
   queue.reset();
 });
 
-test('POST /api/queue/import 校验 uid 重复 / 非法 / 非数组 / 超量', async () => {
+test('POST /api/queue/import 校验非法 / 非数组 / 超量', async () => {
   const cases: Array<{ body: unknown; re: RegExp }> = [
     { body: { items: 'nope' }, re: /数组/ },
-    { body: { items: [{ uid: 1, user: 'a', joinedAt: 1, done: false }, { uid: 1, user: 'b', joinedAt: 2, done: false }] }, re: /重复/ },
     { body: { items: [{ uid: 0, user: 'a', joinedAt: 1, done: false }] }, re: /uid/ },
     { body: { items: [{ uid: 1, user: 'a', joinedAt: 'x', done: false }] }, re: /joinedAt/ },
     { body: { items: [{ uid: 1, user: 'a', joinedAt: 1, done: 'yes' }] }, re: /done/ },
@@ -151,7 +150,9 @@ test('POST /api/queue/import 拒绝不合理的时间戳', async () => {
     { item: { uid: 1, user: 'a', joinedAt: 1e15, done: false }, re: /joinedAt/ },
     { item: { uid: 2, user: 'a', joinedAt: -5, done: false }, re: /joinedAt/ },
     { item: { uid: 3, user: 'a', joinedAt: Date.now(), done: true, completedAt: 1e15 }, re: /completedAt/ },
-    { item: { uid: 4, user: 'a', joinedAt: Date.now(), done: false, skippedAt: -1 }, re: /skippedAt/ },
+    { item: { uid: 4, user: 'a', joinedAt: Date.now(), done: false, moves: [{ id: '1', at: -1, from: 1, to: 2, by: 'gift' }] }, re: /at/ },
+    { item: { uid: 4, user: 'a', joinedAt: Date.now(), done: false, moves: [{ id: '2', at: Date.now(), from: 0, to: 2, by: 'gift' }] }, re: /from\/to/ },
+    { item: { uid: 4, user: 'a', joinedAt: Date.now(), done: false, moves: [{ id: '3', at: Date.now(), from: 1, to: 2, by: 'other' }] }, re: /by/ },
   ];
   for (const { item, re } of cases) {
     const r = await fetch(`${baseUrl}/api/queue/import`, {
@@ -172,12 +173,87 @@ test('POST /api/queue/import 只保留字段并截断昵称', async () => {
   const r = await fetch(`${baseUrl}/api/queue/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: [{ uid: 5, user: long, joinedAt: 1, done: false, skippedAt: 7 }] }),
+    body: JSON.stringify({
+      items: [{
+        uid: 5,
+        user: long,
+        joinedAt: 1,
+        done: false,
+        moves: [{ id: 'm1', at: Date.now(), from: 2, to: 1, by: 'gift', gift: '辣条' }],
+        hack: '应被丢弃',
+      }],
+    }),
   });
   assert.strictEqual(r.status, 200);
   const json: any = await r.json();
   assert.strictEqual(json.queue[0].user.length, 50);
-  assert.strictEqual(json.queue[0].skippedAt, 7);
+  assert.strictEqual(json.queue[0].moves.length, 1);
+  assert.strictEqual(json.queue[0].moves[0].id, 'm1');
+  assert.strictEqual(json.queue[0].moves[0].gift, '辣条');
+  assert.strictEqual(json.queue[0].hack, undefined, '未知字段应被丢弃');
+  assert.ok(json.queue[0].id, '条目应带雪花 ID');
+  queue.reset();
+});
+
+test('POST /api/queue/import 为缺失 ID 的条目补发雪花 ID', async () => {
+  queue.reset();
+  const r = await fetch(`${baseUrl}/api/queue/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: [
+        { uid: 10, user: 'a', joinedAt: Date.now(), done: false },
+        { uid: 11, user: 'b', joinedAt: Date.now(), done: false },
+      ],
+    }),
+  });
+  assert.strictEqual(r.status, 200);
+  const json: any = await r.json();
+  assert.ok(json.queue[0].id && json.queue[1].id);
+  assert.notStrictEqual(json.queue[0].id, json.queue[1].id, '补发的 ID 不应重复');
+  queue.reset();
+});
+
+test('POST /api/queue/import 允许同一 uid 的已完成与重新排队记录共存', async () => {
+  queue.reset();
+  const now = Date.now();
+  const r = await fetch(`${baseUrl}/api/queue/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: [
+        { id: 'a', uid: 285834432, user: 'bi御坂li', joinedAt: now - 60000, done: true, completedAt: now - 50000 },
+        { id: 'b', uid: 285834432, user: 'bi御坂li', joinedAt: now - 30000, done: false },
+      ],
+    }),
+  });
+  assert.strictEqual(r.status, 200);
+  const json: any = await r.json();
+  assert.strictEqual(json.queue.length, 2, '同 uid 两条都应保留');
+  assert.strictEqual(json.queue[0].done, true);
+  assert.strictEqual(json.queue[1].done, false);
+  assert.deepStrictEqual(json.queue.map((it: any) => it.id), ['a', 'b']);
+  queue.reset();
+});
+
+test('POST /api/queue/import 重复的条目 id 会被补发新雪花 ID', async () => {
+  queue.reset();
+  const now = Date.now();
+  const r = await fetch(`${baseUrl}/api/queue/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      items: [
+        { id: 'same', uid: 1, user: 'a', joinedAt: now, done: false },
+        { id: 'same', uid: 2, user: 'b', joinedAt: now, done: false },
+      ],
+    }),
+  });
+  assert.strictEqual(r.status, 200);
+  const json: any = await r.json();
+  assert.strictEqual(json.queue[0].id, 'same');
+  assert.notStrictEqual(json.queue[1].id, 'same', '重复 id 应被替换');
+  assert.ok(json.queue[1].id.length > 0);
   queue.reset();
 });
 

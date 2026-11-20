@@ -9,11 +9,12 @@
     @dragend="$emit('dragend')"
     @dragleave="$emit('dragleave')"
   >
-    <span class="pos" :class="{ top: item.position <= 3 && !item.done, skipped: item.skippedAt && !item.done }">{{ item.position }}</span>
+    <span class="pos" :class="{ top: item.position <= 3 && !item.done, skipped: giftSkipped && !item.done }">{{ item.position }}</span>
     <div class="meta">
       <div class="name_line">
         <span class="user" :style="item.color ? { color: item.color } : {}">{{ item.user }}</span>
-        <span v-if="item.skippedAt && !item.done" class="skip_tag">礼物插队</span>
+        <span v-if="giftSkipped && !item.done" class="skip_tag" :title="moveTitle">礼物插队</span>
+        <span v-if="adminMoved && !item.done" class="admin_tag" :title="moveTitle">手动调整</span>
         <span v-if="item.done" class="done_tag">已完成</span>
       </div>
       <div class="uid">
@@ -47,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { CircleCheck, Top } from '@element-plus/icons-vue'
 import { formatDuration, formatTime } from '@/view/manage/composables/formatTime'
 import type { QueueItem } from '@/types/models'
@@ -60,6 +61,20 @@ const props = defineProps<{
   dragging: boolean
   dragover: boolean
 }>()
+
+/** 是否被礼物插队过（决定置灰与标签） */
+const giftSkipped = computed(() => (props.item.moves ?? []).some((m) => m.by === 'gift'))
+/** 是否被管理员手动调整过 */
+const adminMoved = computed(() => (props.item.moves ?? []).some((m) => m.by === 'admin'))
+
+/** 悬停提示：最近一条位置变动 */
+const moveTitle = computed(() => {
+  const moves = props.item.moves ?? []
+  const last = moves[moves.length - 1]
+  if (!last) return ''
+  const who = last.by === 'gift' ? `礼物插队${last.gift ? `（${last.gift}）` : ''}` : '管理员手动调整'
+  return `${who}：第 ${last.from} 位 → 第 ${last.to} 位（共 ${moves.length} 次变动）`
+})
 
 // 排队时长每分钟刷新一次（plan D25）
 const waited = ref(formatDuration(Date.now() - props.item.joinedAt))
@@ -215,6 +230,7 @@ function onDrop(e: DragEvent): void {
 
 /* 标签钉在昵称右侧，不随昵称长度漂移 */
 .skip_tag,
+.admin_tag,
 .done_tag {  flex-shrink: 0;
   padding: 1px 6px;
   border-radius: var(--radius-sm, 8px);
@@ -226,6 +242,11 @@ function onDrop(e: DragEvent): void {
 .skip_tag {
   background: rgba(162, 89, 255, 0.1);
   color: var(--brand-purple);
+}
+
+.admin_tag {
+  background: rgba(26, 188, 254, 0.1);
+  color: var(--brand-blue);
 }
 
 .done_tag {

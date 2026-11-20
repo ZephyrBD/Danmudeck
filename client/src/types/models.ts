@@ -10,7 +10,20 @@ export interface SettingsData {
   queueLeaveKey?: string
 }
 
+/** 一次位置变动：礼物插队与管理员调整共用 */
+export interface QueueMove {
+  /** 雪花 ID，稳定唯一 key（不展示给用户） */
+  id: string
+  at: number
+  from: number
+  to: number
+  by: 'gift' | 'admin'
+  gift?: string
+}
+
 export interface QueueItem {
+  /** 雪花 ID，同一 uid 多次排队时区分不同条目（不展示给用户） */
+  id: string
   uid: number
   user: string
   color?: string
@@ -18,7 +31,7 @@ export interface QueueItem {
   done: boolean
   joinedAt: number
   completedAt?: number
-  skippedAt?: number
+  moves?: QueueMove[]
 }
 
 export type QueueMode = 'list' | 'horizontal' | 'flow'
@@ -134,13 +147,14 @@ export interface LoginState {
 
 /** 队列导入请求条目（plan §6.4） */
 export interface QueueImportItem {
+  id?: string
   uid: number
   user: string
   color?: string
   joinedAt: number
   done: boolean
   completedAt?: number
-  skippedAt?: number
+  moves?: QueueMove[]
 }
 
 export type ApiResult<T = unknown> = {

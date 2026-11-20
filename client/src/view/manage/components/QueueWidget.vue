@@ -5,10 +5,10 @@
       <span class="counter" :title="`已完成 ${doneCount} 人，共 ${queue.length} 人`">{{ doneCount }}/{{ queue.length }}</span>
       <div class="actions">
         <button class="icon_btn" title="保存队列（导出 JSON）" :disabled="!queue.length" @click="emit('save')">
-          <el-icon :size="16"><Download /></el-icon>
+          <el-icon :size="16"><Upload /></el-icon>
         </button>
         <button class="icon_btn" title="加载队列（导入 JSON）" @click="emit('load')">
-          <el-icon :size="16"><Upload /></el-icon>
+          <el-icon :size="16"><Download /></el-icon>
         </button>
         <button
           class="icon_btn"
@@ -28,23 +28,52 @@
         </button>
       </div>
     </div>
-    <div class="queue_list">
-      <div v-if="!queue.length" class="empty">暂无排队，观众发「{{ enterKey || '排队' }}」入队</div>
-      <QueueRow
-        v-for="(item, index) in queue"
-        :key="item.uid"
-        :item="item"
-        :index="index"
-        :dragging="dragUid === item.uid"
-        :dragover="dragOverIndex === index"
-        @dragstart="onDragStart($event, item)"
-        @dragover="onDragOver($event, index)"
-        @drop="onDrop($event, index)"
-        @dragend="onDragEnd"
-        @dragleave="dragOverIndex === index && (dragOverIndex = -1)"
-        @complete="$emit('complete', item.uid)"
-        @pin="pin(item)"
-      />
+    <div class="queue_body">
+      <div class="queue_section active_section">
+        <div class="section_head">
+          <span class="section_title">排队中</span>
+          <span class="section_count">{{ activeQueue.length }}</span>
+        </div>
+        <div class="queue_list">
+          <div v-if="!activeQueue.length" class="empty">
+            暂无排队，观众发「{{ enterKey || '排队' }}」入队
+          </div>
+          <QueueRow
+            v-for="(item, index) in activeQueue"
+            :key="`a-${item.uid}-${item.joinedAt}`"
+            :item="item"
+            :index="index"
+            :dragging="dragUid === item.uid"
+            :dragover="dragOverIndex === index"
+            @dragstart="onDragStart($event, item)"
+            @dragover="onDragOver($event, index)"
+            @drop="onDrop($event, index)"
+            @dragend="onDragEnd"
+            @dragleave="dragOverIndex === index && (dragOverIndex = -1)"
+            @complete="$emit('complete', item.uid)"
+            @pin="pin(item)"
+          />
+        </div>
+      </div>
+      <div class="queue_section done_section">
+        <div class="section_head">
+          <span class="section_title">已完成</span>
+          <span class="section_count">{{ doneQueue.length }}</span>
+        </div>
+        <div class="queue_list">
+          <div v-if="!doneQueue.length" class="empty">还没有完成的委托</div>
+          <QueueRow
+            v-for="item in doneQueue"
+            :key="`d-${item.uid}-${item.completedAt ?? item.joinedAt}`"
+            :item="item"
+            :index="item.position - 1"
+            :dragging="false"
+            :dragover="false"
+            @complete="$emit('complete', item.uid)"
+            @pin="pin(item)"
+          />
+        </div>
+      </div>
     </div>
     <div class="hint">拖拽行可以调整顺序哦</div>
   </div>
@@ -74,6 +103,17 @@ const emit = defineEmits<{
 }>()
 
 const doneCount = computed(() => props.queue.filter((i) => i.done).length)
+
+/** 上区：排队中，保持队列顺序 */
+const activeQueue = computed(() => props.queue.filter((i) => !i.done))
+
+/** 下区：已完成，按完成时间倒序（最新完成的在最上面） */
+const doneQueue = computed(() =>
+  props.queue
+    .filter((i) => i.done)
+    .slice()
+    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+)
 
 // 破坏性操作先确认（plan L6）
 async function confirmThen(message: string, action: 'clearDone' | 'reset'): Promise<void> {
@@ -188,7 +228,56 @@ function pin(item: QueueItem): void {
   }
 }
 
+.queue_body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 上区排队中占 3/4，下区已完成占 1/4；下区为空也保留占位 */
+.queue_section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  &.active_section {
+    flex: 3 1 0;
+  }
+
+  &.done_section {
+    flex: 1 1 0;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+  }
+}
+
+.section_head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+
+  .section_title {
+    font-size: var(--fs-13);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .section_count {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-muted);
+    font-size: var(--fs-13);
+  }
+}
+
 .queue_list {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;

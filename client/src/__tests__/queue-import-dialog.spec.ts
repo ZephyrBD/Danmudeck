@@ -5,14 +5,14 @@ import { mergePreview } from '@/view/manage/composables/queueFile'
 import type { QueueItem } from '@/types/models'
 
 const local: QueueItem[] = [
-  { uid: 1, user: 'alice', position: 1, done: false, joinedAt: 100 },
-  { uid: 2, user: 'bob', position: 2, done: false, joinedAt: 200 },
+  { id: 'l1', uid: 1, user: 'alice', position: 1, done: false, joinedAt: 100 },
+  { id: 'l2', uid: 2, user: 'bob', position: 2, done: false, joinedAt: 200 },
 ]
 
 const fromFile = [
-  { uid: 1, user: 'alice-old', color: '', joinedAt: 50, done: false, completedAt: 0 },
-  { uid: 2, user: 'bob-file', color: '', joinedAt: 900, done: false, completedAt: 0 },
-  { uid: 3, user: 'newbie', color: '', joinedAt: 300, done: false, completedAt: 0 },
+  { id: 'l1', uid: 1, user: 'alice-old', color: '', joinedAt: 50, done: false, completedAt: 0 },
+  { id: 'l2', uid: 2, user: 'bob-file', color: '', joinedAt: 900, done: false, completedAt: 0 },
+  { id: 'f3', uid: 3, user: 'newbie', color: '', joinedAt: 300, done: false, completedAt: 0 },
 ]
 
 describe('QueueImportDialog', () => {

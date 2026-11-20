@@ -143,16 +143,22 @@ test('move 无效 uid 与越界位置报错', () => {
   assert.strictEqual((q.move(1, 0.5) as any).reason, 'bad_index');
 });
 
-test('skip 置顶并标记 skippedAt', () => {
+test('skip 置顶并记录 moves', () => {
   const q = new Queue();
   q.enter(1, '甲');
   q.enter(2, '乙');
   q.enter(3, '丙');
-  const r = q.skip(3, 'top');
+  const r = q.skip(3, 'top', 0, null, '辣条');
   assert.strictEqual(r.ok, true);
   assert.strictEqual((r as any).position, 1);
   assert.deepStrictEqual(q.list().map((i) => i.uid), [3, 1, 2]);
-  assert.ok(q.list()[0].skippedAt! > 0);
+  const moves = q.list()[0].moves!;
+  assert.strictEqual(moves.length, 1);
+  assert.strictEqual(moves[0].by, 'gift');
+  assert.strictEqual(moves[0].gift, '辣条');
+  assert.strictEqual(moves[0].from, 3);
+  assert.strictEqual(moves[0].to, 1);
+  assert.ok(moves[0].id.length > 0, 'moves 应带雪花 ID');
 });
 
 test('skip 前进 N 位且不越过队首', () => {
@@ -193,7 +199,7 @@ test('skip 不会把已完成条目移到队首', () => {
   assert.strictEqual(r.ok, false, '已完成条目不应可被插队');
   assert.strictEqual((r as any).reason, 'not_found');
   assert.deepStrictEqual(q.list().map((i) => i.uid), [1, 2], '顺序不变');
-  assert.strictEqual(q.list()[0].skippedAt, undefined, '不应被标记 skippedAt');
+  assert.strictEqual(q.list()[0].moves, undefined, '不应被记录 moves');
 });
 
 // 回归测试（bug2）：move/leave 对已完成条目同样视为不存在
